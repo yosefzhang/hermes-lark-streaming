@@ -269,11 +269,11 @@ class TestConfigClampsAndFooter:
             {"x": 1}, [123], "", [], None,
         ]}}}
         # fields[0] 非 str → 逐行校验分支；全部非 [str,...] → 回落默认
-        assert cfg.footer_fields == [["status", "elapsed", "model"]]
+        assert cfg.footer_fields == [["status", "elapsed", "model", "provider"]]
 
     def test_default_footer_fields_aligned(self):
         cfg = Config(); cfg._raw = {"hermes_lark_streaming": {}}
-        assert cfg._default_footer_fields() == [["status", "elapsed", "model"]]
+        assert cfg._default_footer_fields() == [["status", "elapsed", "model", "provider"]]
 
     def test_default_footer_fields_with_reasoning(self, monkeypatch):
         fake = ModuleType("hermes_constants")
@@ -287,7 +287,8 @@ class TestConfigClampsAndFooter:
         cfg = Config()
         cfg._raw = {"display": {"show_reasoning": True}, "agent": {"reasoning_effort": "high"},
                     "hermes_lark_streaming": {}}
-        assert cfg._default_footer_fields() == [["status", "elapsed", "model", "reasoning"]]
+        assert cfg._default_footer_fields() == [
+            ["status", "elapsed", "model", "provider", "reasoning"]]
 
 
 # ---------------------------------------------------------------------------

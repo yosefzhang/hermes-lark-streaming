@@ -264,12 +264,12 @@ class Config:
 
     def _default_footer_fields(self) -> list[list[str]]:
         # v2.0.21（审计 R10）：与 finalize._DEFAULT_FOOTER_FIELDS 对齐为同一
-        # 事实源 [status/elapsed/model(+reasoning)]。此前默认表多列
+        # 事实源 [status/elapsed/model/provider(+reasoning)]。此前默认表多列
         # cost/compression_exhausted——两字段在 V2 契约下数据不可达（Task 26
         # 定案：官方 hook/帧契约均无 usage 数据），渲染层永远静默跳过，收录
         # 在默认表只误导显式配置用户；渲染层仍保留两字段分支（未来数据通道
-        # 开放自动生效）。
-        base = ["status", "elapsed", "model"]
+        # 开放自动生效）。provider 为 V1 补丁回归（v2.1.1）。
+        base = ["status", "elapsed", "model", "provider"]
         if self.footer_reasoning_level:
             base.append("reasoning")
         return [base]

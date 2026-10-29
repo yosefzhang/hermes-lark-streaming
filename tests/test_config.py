@@ -44,8 +44,8 @@ class TestRemovedV1Properties:
 class TestFooterFields:
     # v2.0.21（审计 R10）：默认字段对齐 finalize 兜底常量——cost/
     # compression_exhausted 在 V2 契约下数据不可达（Task 26 定案），
-    # 渲染层永远静默跳过，默认表不再收录。
-    _DEFAULT_FIELDS = [["status", "elapsed", "model"]]
+    # 渲染层永远静默跳过，默认表不再收录。provider 为 v2.1.1 回归项。
+    _DEFAULT_FIELDS = [["status", "elapsed", "model", "provider"]]
 
     def test_normal_2d_fields(self) -> None:
         cfg = _make_config({"hermes_lark_streaming": {"footer": {"fields": [["a", "b"], ["c"]]}}})

@@ -38,7 +38,7 @@ gateway:
 | `width_mode` | str/int | `"default"` | 卡片宽度：`default`(600px) / `compact`(400px) / `fill`(撑满窗口)，或正整数像素值（走官方 `width` 字段）；默认不注入，卡片 payload 与上游一致 |
 | `card_ttl_sec` | int | `600` | 卡片会话 TTL（秒），超时自动回收；下限钳制 60s（负值/极小值会让活跃回合状态被 GC——断卡事故同族） |
 | `footer.show_label` | bool | `false` | footer 标签显示 |
-| `footer.fields` | list | 见说明 | 页脚字段行（`[["status","elapsed","model"]]` 语法，V1 兼容单层列表）；支持字段 `status/elapsed/model/cost/tokens/cache/reasoning`（无值字段自动省略；畸形行剔除 + warning + 全畸形回落默认；默认表 `status/elapsed/model(+reasoning)`——cost/tokens/cache 等在 V2 契约下数据不可达，配置了也自动省略） |
+| `footer.fields` | list | 见说明 | 页脚字段行（`[["status","elapsed","model"]]` 语法，V1 兼容单层列表）；支持字段 `status/elapsed/model/provider/cost/tokens/cache/reasoning`（无值字段自动省略；畸形行剔除 + warning + 全畸形回落默认；默认表 `status/elapsed/model/provider(+reasoning)`——cost/tokens/cache 等在 V2 契约下数据不可达，配置了也自动省略；provider 的 `custom:<name>` 显示实际名称） |
 | `card_style.text_size.answer` | map | 未配置（零注入） | 正文（answer 元素）字号，完全 opt-in：配置后按 `{default, pc, mobile}` 三档生效，未写的组/档位回落内置字面值（answer→`normal_v2`）；值域官方 13 档 token，非法值回落 normal；落卡 token `cus-ans`；未配置时不注入 `config.style` |
 | `card_style.text_size.aux` | map | 未配置（零注入） | 辅助行字号（面板思考/工具行/警告/页脚/折叠提示），同上三档结构，未写档位回落 `notation`，落卡 token `cus-aux` |
 

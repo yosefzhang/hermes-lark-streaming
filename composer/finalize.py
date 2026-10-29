@@ -32,9 +32,9 @@ _logger = logging.getLogger("hermes_lark_streaming.composer")
 
 # 默认页脚字段（V1 对齐；拿不到数据的字段由渲染层自动跳过）。
 # v2.0.21（审计 R10）：与 config/reader.py _default_footer_fields 对齐为同一
-# 事实源 [status/elapsed/model]——本常量仅在 Config 不可用时兜底（engine.
+# 事实源 [status/elapsed/model/provider]——本常量仅在 Config 不可用时兜底（engine.
 # _footer_fields 异常路径），生产路径恒走 Config 默认（reasoning 条件追加）。
-_DEFAULT_FOOTER_FIELDS: list[list[str]] = [["status", "elapsed", "model"]]
+_DEFAULT_FOOTER_FIELDS: list[list[str]] = [["status", "elapsed", "model", "provider"]]
 
 
 def _summary_of(state: Any) -> str:
@@ -55,6 +55,20 @@ def _resolve_model_name() -> str:
         return ""
 
 
+def _resolve_provider_name() -> str:
+    """网关配置的 provider 名（``custom:<name>`` 显示实际名称；无 hermes 环境返回空）."""
+    try:
+        from gateway.run import _load_gateway_config
+
+        cfg = _load_gateway_config() or {}
+        raw = str((cfg.get("model") or {}).get("provider") or "").strip()
+    except Exception:  # noqa: BLE001 — 页脚 provider 字段尽力而为
+        return ""
+    if raw.startswith("custom:"):
+        return raw.split(":", 1)[1].strip()
+    return raw
+
+
 async def _seal_footer(
     client: Any,
     state: Any,
@@ -67,7 +81,11 @@ async def _seal_footer(
     from ..cardkit.elements import _LOADING_ELEMENT_ID, _build_footer_elements
 
     duration_sec = max(0.0, time.monotonic() - getattr(state, "created_at", time.monotonic()))
-    footer_data = {"duration": duration_sec, "model": model_name or ""}
+    footer_data = {
+        "duration": duration_sec,
+        "model": model_name or "",
+        "provider": _resolve_provider_name(),
+    }
     # v2.0.19：footer reasoning 等级（display.show_reasoning: true 且
     # reasoning_effort 有效时供值；渲染层无值自动跳过该字段）。
     from ..config import Config

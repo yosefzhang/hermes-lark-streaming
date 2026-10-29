@@ -189,6 +189,16 @@ class TestBuildFooterElements:
         result = _build_footer_elements({"model": "claude-3"}, fields=[["model"]])
         assert "claude-3" in result[1]["content"]
 
+    def test_provider_displayed(self) -> None:
+        result = _build_footer_elements({"provider": "uni-api"}, fields=[["provider"]])
+        assert "uni-api" in result[1]["content"]
+
+    def test_provider_empty_skipped(self) -> None:
+        result = _build_footer_elements(
+            {"provider": ""}, fields=[["status", "provider"]])
+        assert "uni-api" not in result[1]["content"]
+        assert "Completed" in result[1]["content"]
+
     def test_context_displayed(self) -> None:
         result = _build_footer_elements(
             {"context_used": 50000, "context_max": 200000},
@@ -496,6 +506,19 @@ class TestBuildCronCard:
         # optimize_markdown_style downgrades h1 → h4
         combined = " ".join(e["content"] for e in card["body"]["elements"])
         assert "#### Title" in combined
+
+
+class TestProviderFooterField:
+    """v2.1.1: provider 页脚字段渲染（V1 补丁回归）."""
+
+    def test_provider_value(self) -> None:
+        en, zh = _render_footer_field(
+            "provider", {"provider": "uni-api"}, False, False, False)
+        assert (en, zh) == ("uni-api", "uni-api")
+
+    def test_provider_missing(self) -> None:
+        en, zh = _render_footer_field("provider", {}, False, False, False)
+        assert (en, zh) == (None, None)
 
 
 # --- Cache footer field ---

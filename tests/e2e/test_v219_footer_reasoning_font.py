@@ -151,12 +151,13 @@ class TestDefaultFooterFieldsAppend:
         _install_fake_hermes_constants(monkeypatch)
         cfg = _make_config({"hermes_lark_streaming": {}})
         # v2.0.21（审计 R10）：cost/compression_exhausted 数据不可达，默认表不再收录
-        assert cfg.footer_fields == [["status", "elapsed", "model"]]
+        # v2.1.1：provider 回归默认表（model 之后）
+        assert cfg.footer_fields == [["status", "elapsed", "model", "provider"]]
 
     def test_default_fields_append_reasoning(self, monkeypatch):
         _install_fake_hermes_constants(monkeypatch)
         cfg = _make_config(_reasoning_raw(True, "medium"))
-        assert cfg.footer_fields == [["status", "elapsed", "model", "reasoning"]]
+        assert cfg.footer_fields == [["status", "elapsed", "model", "provider", "reasoning"]]
 
     def test_explicit_fields_not_touched(self, monkeypatch):
         """用户显式配置 fields → 不自动追加（自行控制位置）."""

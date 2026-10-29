@@ -39,7 +39,7 @@ _DEFAULT_STREAMING_CONFIG: dict[str, Any] = {
     "card_ttl_sec": 600,
     "footer": {
         "fields": [
-            ["status", "elapsed", "model", "cost", "compression_exhausted"],
+            ["status", "elapsed", "model", "provider"],
         ],
         "show_label": False,
     },
