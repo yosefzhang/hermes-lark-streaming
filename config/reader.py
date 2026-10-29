@@ -13,8 +13,19 @@ import yaml
 _logger = logging.getLogger("hermes_lark_streaming")
 
 def _get_hermes_config_path() -> Path:
-    """动态获取 Hermes 配置文件路径."""
-    return Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))) / "config.yaml"
+    """动态获取 Hermes 配置文件路径.
+
+    多 profile 下必须走 hermes_constants.get_hermes_home()：gateway 用
+    context-local override 切 profile（set_hermes_home_override 明确声明
+    "Deliberately does not mutate os.environ"），只读 HERMES_HOME 环境变量
+    会一直是 installation root，读不到 profile 自己的 config.yaml。
+    """
+    try:
+        from hermes_constants import get_hermes_home
+
+        return Path(get_hermes_home()) / "config.yaml"
+    except Exception:  # hermes 不在环境（测试沙箱）：回退 env
+        return Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))) / "config.yaml"
 
 def _to_bool(val: Any, default: bool = False) -> bool:
     if isinstance(val, bool):
@@ -59,7 +70,11 @@ class Config:
     def __init__(self) -> None:
         if getattr(self, "_initialized", False):
             return
+        # _raw: 显式注入/测试覆盖层 —— 非 None 时优先返回，不走 profile 缓存
         self._raw: dict[str, Any] | None = None
+        # _cache: 按 config 文件路径分键缓存。multiplex 模式下同一进程服务多个
+        # profile（context-local HERMES_HOME override 随回合切换），单份缓存会串配置。
+        self._cache: dict[str, dict[str, Any]] = {}
         # _lock: Config singleton shared across event-loop + worker threads.
         self._lock = threading.Lock()
         self._initialized = True
@@ -68,6 +83,7 @@ class Config:
         """Force reload from disk. Called by /aowen config reload."""
         with self._lock:
             self._raw = None
+            self._cache.clear()
         _logger.info("HLS: config reload triggered — caches cleared")
 
     @property
@@ -304,20 +320,24 @@ class Config:
         return {}
 
     def _load(self) -> dict[str, Any]:
+        config_path = _get_hermes_config_path()
+        cache_key = str(config_path)
         with self._lock:
             if self._raw is not None:
                 return self._raw
-            config_path = _get_hermes_config_path()
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                return cached
+            data: dict[str, Any] = {}
             if config_path.exists():
                 try:
                     text = config_path.read_text(encoding="utf-8")
-                    self._raw = yaml.safe_load(text) or {}
+                    data = yaml.safe_load(text) or {}
                 except yaml.YAMLError:
                     _logger.warning("HLS: config YAML syntax error in %s, using empty config", config_path)
-                    self._raw = {}
+                    data = {}
                 except (OSError, UnicodeDecodeError):
                     _logger.warning("HLS: config file read error in %s, using empty config", config_path)
-                    self._raw = {}
-            else:
-                self._raw = {}
-            return self._raw
+                    data = {}
+            self._cache[cache_key] = data
+            return data
