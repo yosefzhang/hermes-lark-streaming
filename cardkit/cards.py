@@ -352,6 +352,7 @@ def build_streaming_card_v2(
     include_unified_panel: bool = True,
     include_loading_hint: bool = False,  # v2.0.4: 已废弃，保留签名兼容（不再渲染）
     include_answer_element: bool = True,
+    width_mode: str | int = "default",
     status_lines: list[str] | None = None,
     answer_text: str = "",
     panel_title: str = "",
@@ -418,6 +419,12 @@ def build_streaming_card_v2(
         },
         "body": {"elements": elements},
     }
+    # v2.1.0：卡片宽度。default 不注入（与 v2.0.29 payload 逐字段一致）；
+    # 像素值走官方 `width` 字段，其余走 Card 2.0 `width_mode`。
+    if isinstance(width_mode, int):
+        card["config"]["width"] = width_mode
+    elif width_mode != "default":
+        card["config"]["width_mode"] = width_mode
     # v2.0.9 P2-5：200 元素上限安全网接线（此前函数定义+导出但从未调用）。
     # 正常状态 ≤12 行 ≈ 30 元素，远低于阈值；裁剪仅在异常膨胀时生效
     # （裁最旧面板子项 + 「⚡ 还有 N 项已折叠」提示），answer/页脚不裁。

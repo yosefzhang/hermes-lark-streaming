@@ -91,6 +91,26 @@ class Config:
         return max(1, min(10, val))
 
     @property
+    def width_mode(self) -> str | int:
+        """卡片宽度: "default"(600px), "compact"(400px), "fill"(撑满窗口), 或自定义像素值."""
+        val = self._plugin_sec().get("width_mode", "default")
+        if isinstance(val, bool):
+            return "default"
+        if isinstance(val, int) and val > 0:
+            return val
+        if isinstance(val, str):
+            stripped = val.strip().lower()
+            if stripped in ("default", "compact", "fill"):
+                return stripped
+            try:
+                n = int(stripped)
+                if n > 0:
+                    return n
+            except ValueError:
+                pass
+        return "default"
+
+    @property
     def feishu_app_id(self) -> str:
         return str(self._platform_cfg().get("app_id", ""))
 

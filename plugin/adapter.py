@@ -133,6 +133,7 @@ class _CardFactory:
             "streaming_panel_expanded": boolget("streaming_panel_expanded", True),
             "print_strategy": str(getattr(cfg, "print_strategy", "delay") or "delay"),
             "print_step": int(getattr(cfg, "print_step", 4) or 4),
+            "width_mode": getattr(cfg, "width_mode", "default"),
         }
 
     def streaming(

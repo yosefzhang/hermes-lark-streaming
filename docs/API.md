@@ -35,6 +35,7 @@ gateway:
 | `clarify_suspend_sec` | float | `1.2` | clarify 暂停窗口秒数：finalize 帧窗口内等 `send_clarify` 确认边界 → 同卡续流；到期无确认 → 真落定（普通回合仅 footer 延迟窗口时长）；`0` = 关闭（clarify 前卡先完成、回调后开新卡） |
 | `print_strategy` | str | `"delay"` | 打字机策略（透传 CardKit streaming_config） |
 | `print_step` | int | `4` | 打字机步长 |
+| `width_mode` | str/int | `"default"` | 卡片宽度：`default`(600px) / `compact`(400px) / `fill`(撑满窗口)，或正整数像素值（走官方 `width` 字段）；默认不注入，卡片 payload 与上游一致 |
 | `card_ttl_sec` | int | `600` | 卡片会话 TTL（秒），超时自动回收；下限钳制 60s（负值/极小值会让活跃回合状态被 GC——断卡事故同族） |
 | `footer.show_label` | bool | `false` | footer 标签显示 |
 | `footer.fields` | list | 见说明 | 页脚字段行（`[["status","elapsed","model"]]` 语法，V1 兼容单层列表）；支持字段 `status/elapsed/model/cost/tokens/cache/reasoning`（无值字段自动省略；畸形行剔除 + warning + 全畸形回落默认；默认表 `status/elapsed/model(+reasoning)`——cost/tokens/cache 等在 V2 契约下数据不可达，配置了也自动省略） |

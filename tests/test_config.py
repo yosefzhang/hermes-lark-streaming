@@ -275,6 +275,34 @@ class TestConfigSingleton:
                 "reload 后 controller 持有实例的缓存应被清除，读到新配置"
 
 
+class TestWidthMode:
+    """v2.1.0: width_mode 配置项（V1 补丁回归）."""
+
+    def test_default(self) -> None:
+        cfg = _make_config({"hermes_lark_streaming": {}})
+        assert cfg.width_mode == "default"
+
+    def test_fill(self) -> None:
+        cfg = _make_config({"hermes_lark_streaming": {"width_mode": "fill"}})
+        assert cfg.width_mode == "fill"
+
+    def test_compact(self) -> None:
+        cfg = _make_config({"hermes_lark_streaming": {"width_mode": " compact "}})
+        assert cfg.width_mode == "compact"
+
+    def test_custom_pixels(self) -> None:
+        cfg = _make_config({"hermes_lark_streaming": {"width_mode": "760"}})
+        assert cfg.width_mode == 760
+
+    def test_invalid_falls_back(self) -> None:
+        cfg = _make_config({"hermes_lark_streaming": {"width_mode": "wide"}})
+        assert cfg.width_mode == "default"
+
+    def test_non_positive_int_falls_back(self) -> None:
+        cfg = _make_config({"hermes_lark_streaming": {"width_mode": 0}})
+        assert cfg.width_mode == "default"
+
+
 class TestPrintStep:
     """v1.3.0: print_step 配置项测试."""
 

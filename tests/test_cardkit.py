@@ -402,6 +402,21 @@ class TestBuildStreamingCardV2:
         card = build_streaming_card_v2(show_reasoning=True, print_strategy="fast")
         assert card["config"]["streaming_config"]["print_strategy"] == "fast"
 
+    def test_width_mode_default_not_injected(self) -> None:
+        card = build_streaming_card_v2()
+        assert "width_mode" not in card["config"]
+        assert "width" not in card["config"]
+
+    def test_width_mode_fill(self) -> None:
+        card = build_streaming_card_v2(width_mode="fill")
+        assert card["config"]["width_mode"] == "fill"
+        assert "width" not in card["config"]
+
+    def test_width_mode_custom_pixels(self) -> None:
+        card = build_streaming_card_v2(width_mode=760)
+        assert card["config"]["width"] == 760
+        assert "width_mode" not in card["config"]
+
     def test_initial_summary_has_i18n_content(self) -> None:
         """Streaming card must set both content and i18n_content for summary.
 
