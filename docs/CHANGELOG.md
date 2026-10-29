@@ -1,5 +1,12 @@
 # 更新日志
 
+## v2.1.2（2026-10-29）
+
+| 类型 | 变更 |
+|------|------|
+| 修复 | 多 profile 下按当前 profile 的 `config.yaml` 读取配置：改用 `hermes_constants.get_hermes_home()`（context-local override），缓存按 config 路径分键，避免 multiplex 进程串配置 |
+| 修复 | 移除 `[build-system]`：Hermes PM 把无 build backend 的插件当虚拟成员，自动生成唯一 workspace 名，解决同一插件多 profile 启用时 uv lock 同名成员冲突 |
+
 ## v2.1.1（2026-10-29）
 
 | 类型 | 变更 |
