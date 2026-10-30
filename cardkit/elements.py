@@ -84,10 +84,10 @@ _LOADING_ELEMENT_ID = "loading_icon"
 # 零成本图标通道；键与 footer.fields 的字段名一一对应，未知字段不加图标。
 _FOOTER_ICONS: dict[str, str] = {
     "status": "✅",
-    "elapsed": "⏱",
-    "model": "🤖",
-    "provider": "☁️",
-    "reasoning": "🧠",
+    "elapsed": "⏳",      # 用户定稿：时间用漏斗（⏳，Unicode 6.0，跨端稳定）
+    "model": "🧠",        # 大模型
+    "provider": "🏬",     # 供应商（店铺）
+    "reasoning": "💭",    # 思考程度
     "context": "📊",
     "tokens": "🔢",
     "cost": "💰",

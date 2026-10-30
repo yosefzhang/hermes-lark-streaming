@@ -43,7 +43,7 @@ def test_button_row_is_left_aligned_queue():
     assert value == {"hermes_agentloop_action": "toggle", "panel_key": "abc123def456"}
     assert cols[2]["width"] == "weighted"
     rest = cols[2]["elements"][0]["i18n_content"]["zh_cn"]
-    assert rest.startswith("⏱ 5.9s") and "177.9K/1.0M (17%)" in rest
+    assert rest.startswith("⏳ 5.9s") and "177.9K/1.0M (17%)" in rest
 
 
 def test_without_button_footer_stays_single_markdown():

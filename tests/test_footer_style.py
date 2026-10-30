@@ -32,7 +32,7 @@ def test_plain_style_keeps_middle_dot():
 
 def test_icon_style_prefixes_every_field():
     content = _content(style="icon")
-    for icon in ("✅", "⏱", "🤖", "☁️", "🧠", "📊"):
+    for icon in ("✅", "⏳", "🧠", "🏬", "💭", "📊"):
         assert icon in content, f"{icon} 缺失：{content}"
     assert "　" in content and " · " not in content
     assert "177.9K/1.0M (17%)" in content
