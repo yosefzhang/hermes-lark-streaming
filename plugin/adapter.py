@@ -163,6 +163,46 @@ class _CardFactory:
         return build_streaming_card_v2(**params)
 
 
+# ── 上下文用量取数（v2.1.3，零 patch）────────────────────────────────────
+def usage_from_runner(runner: Any, chat_id: str, platform_name: str = PLATFORM_NAME) -> dict[str, int] | None:
+    """本回合上下文用量：``{"context_used": N, "context_max": M}``，取不到返回 None。
+
+    数据链（全在 gateway 进程内存里，无需改 hermes core）：
+    ``BasePlatformAdapter.gateway_runner``（gateway/run_adapters.py 赋值）
+    → ``_agent_cache[session_key] = (agent, sig, msg_count, session_id)``
+      （gateway/run_turn_runner.py 写入）
+    → ``agent.context_compressor.last_prompt_tokens``（provider 实测的最近一次
+      prompt 大小）/ ``context_length``（模型窗口）。
+
+    与 ``/status`` 的 context 行同源，所以两处数字永远一致。任何一环缺失、
+    或数值为 0 都返回 None —— 页脚逐字段静默跳过，绝不阻断定稿。
+    """
+    try:
+        cache = getattr(runner, "_agent_cache", None) or {}
+        entry: Any = None
+        # session_key 形如 ``agent:<profile>:feishu-streaming:dm:<chat_id>``；
+        # 群聊会在尾部再挂 participant id（``:group:<chat_id>:<user>``），所以按
+        # 冒号切段比对，而不是靠后缀——后缀匹配在群聊里永远落空。
+        for key, value in list(cache.items()):
+            parts = str(key).split(":")
+            if platform_name in parts and chat_id in parts:
+                entry = value
+                break
+        if entry is None:
+            return None
+        agent = entry[0] if isinstance(entry, (tuple, list)) else entry
+        compressor = getattr(agent, "context_compressor", None)
+        used = int(getattr(compressor, "last_prompt_tokens", 0) or 0)
+        maximum = int(getattr(compressor, "context_length", 0) or 0)
+        if maximum <= 0:  # 压缩器未带窗口时回落 agent 上的配置钉值
+            maximum = int(getattr(agent, "_config_context_length", 0) or 0)
+        if used <= 0 or maximum <= 0:
+            return None
+        return {"context_used": min(used, maximum), "context_max": maximum}
+    except Exception:  # noqa: BLE001 — 页脚用量是装饰性字段
+        return None
+
+
 # ── 适配器 ──────────────────────────────────────────────────────────────────
 class FeishuStreamingAdapter(_FeishuAdapter):  # type: ignore[misc,valid-type]
     """流式卡片版飞书适配器 — 内置能力全继承，出站语义层重写."""
@@ -207,6 +247,7 @@ class FeishuStreamingAdapter(_FeishuAdapter):  # type: ignore[misc,valid-type]
             build_card=self._card_factory.streaming,
             build_final_card=self._card_factory.final,
             config=self._card_config,
+            get_usage=self._turn_usage,
         )
         # v2.0.7：reasoning 隐藏流 → 面板思考行（第 N 轮）落点注册
         try:
@@ -251,6 +292,14 @@ class FeishuStreamingAdapter(_FeishuAdapter):  # type: ignore[misc,valid-type]
                 "feishu-streaming: built-in FeishuAdapter has no _handle_card_action_event "
                 "— clarify card callbacks will be inert on this hermes version"
             )
+
+    def _turn_usage(self, chat_id: str) -> dict[str, int] | None:
+        """FrameComposer 的用量取数回调：委派给模块级 ``usage_from_runner``.
+
+        ``gateway_runner`` 是官方基类属性（gateway/run_adapters.py 赋值），
+        CLI/TUI 等无网关环境为 None → 直接返回 None。
+        """
+        return usage_from_runner(getattr(self, "gateway_runner", None), chat_id)
 
     def _get_card_client(self) -> Any:
         if self._card_client is None:
@@ -563,6 +612,15 @@ class FeishuStreamingAdapter(_FeishuAdapter):  # type: ignore[misc,valid-type]
                 return _clarify.handle_clarify_card_action(self, self._get_card_client, data)
             except Exception:
                 _logger.warning("feishu-streaming: clarify callback failed", exc_info=True)
+                return
+        if isinstance(action_value, dict) and action_value.get("hermes_agentloop_action"):
+            try:
+                from ..composer import agentloop as _agentloop
+
+                if await _agentloop.handle_action(self, data):
+                    return
+            except Exception:
+                _logger.warning("feishu-streaming: agentloop callback failed", exc_info=True)
                 return
         # 非 clarify 卡片动作：hermes 会合成 "/card <tag> <value>" 命令，
         # 网关必然拒绝（Unknown command）——抑制并留痕。

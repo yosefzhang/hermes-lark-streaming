@@ -79,6 +79,23 @@ STREAMING_ELEMENT_ID = "streaming_content"
 ANSWER_ELEMENT_ID = "answer_content"
 UNIFIED_PANEL_ELEMENT_ID = "agent_process_panel"
 _LOADING_ELEMENT_ID = "loading_icon"
+
+# v2.1.4：页脚图标（style: icon）。飞书卡片不支持内联 SVG，emoji 是唯一
+# 零成本图标通道；键与 footer.fields 的字段名一一对应，未知字段不加图标。
+_FOOTER_ICONS: dict[str, str] = {
+    "status": "✅",
+    "elapsed": "⏱",
+    "model": "🤖",
+    "provider": "☁️",
+    "reasoning": "🧠",
+    "context": "📊",
+    "tokens": "🔢",
+    "cost": "💰",
+    "cache": "⚡",
+    "api_calls": "🔁",
+    "history_offset": "📜",
+    "compression_exhausted": "🧯",
+}
 _LOADING_HINT_ELEMENT_ID = "context_loading_hint"
 _LOADING_IMG_KEY = "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg"
 
@@ -363,44 +380,101 @@ def _build_footer_elements(
     is_aborted: bool = False,
     fields: list[list[str]] | None = None,
     show_label: bool = False,
+    style: str = "plain",
+    agentloop: dict[str, Any] | None = None,
 ) -> list[dict]:
+    """页脚元素（hr + 灰字一行或多行）。
+
+    ``style``（v2.1.4）：``plain`` = 现状 ``·`` 分隔；``icon`` = 每个字段前加
+    emoji 图标、字段间用全角空格分隔（用户选定的 B 方案）。
+    ``agentloop``（v2.1.5）：给了就在**首个字段（已完成）之后、左对齐排队**
+    插一个小按钮（用户指定布局 I：type=default + size=small），点击回调由
+    ``composer.agentloop`` 把过程面板 append 到卡片末尾。
+
+    飞书卡片不支持内联 SVG，emoji 是唯一零成本"图标"通道；``collapsible_panel``
+    是块级元素，无法内联，所以这里用 ``column_set`` 实现"同一行左对齐排队"。
+    """
     if fields is None:
         fields = [["status", "elapsed", "context", "model"]]
 
+    icon_style = str(style or "plain").strip().lower() == "icon"
+    sep = "　" if icon_style else " · "
     data = footer_data or {}
-    en_lines: list[str] = []
-    zh_lines: list[str] = []
-    for row in fields:
-        en_parts: list[str] = []
-        zh_parts: list[str] = []
-        for field in row:
-            en, zh = _render_footer_field(field, data, is_error, is_aborted, show_label)
-            if en:
-                en_parts.append(en)
-                if zh:
-                    zh_parts.append(zh)
-        if en_parts:
-            en_lines.append(" · ".join(en_parts))
-            zh_lines.append(" · ".join(zh_parts))
 
-    if not en_lines:
+    def _render(field: str) -> tuple[str, str] | None:
+        en, zh = _render_footer_field(field, data, is_error, is_aborted, show_label)
+        if not en:
+            return None
+        if icon_style:
+            if field == "status":
+                icon = "❌" if is_error else "⏹" if is_aborted else "✅"
+            else:
+                icon = _FOOTER_ICONS.get(field, "")
+            en = f"{icon} {en}".strip()
+            zh = f"{icon} {(zh or en)}".strip()
+        return en, (zh or en)
+
+    rows: list[list[tuple[str, str]]] = []
+    for row in fields:
+        pairs = [pair for pair in (_render(field) for field in row) if pair]
+        if pairs:
+            rows.append(pairs)
+    if not rows:
         return []
 
-    en_content = "\n".join(en_lines)
-    zh_content = "\n".join(zh_lines)
-    if is_error:
-        en_content = f"<font color='red'>{en_content}</font>"
-        zh_content = f"<font color='red'>{zh_content}</font>"
-
-    return [
-        {"tag": "hr"},
-        {
+    def _md(en: str, zh: str) -> dict:
+        if is_error:
+            en = f"<font color='red'>{en}</font>"
+            zh = f"<font color='red'>{zh}</font>"
+        return {
             "tag": "markdown",
-            "content": en_content,
-            "i18n_content": _i18n(en_content, zh_content),
+            "content": en,
+            "i18n_content": _i18n(en, zh),
             "text_size": _aux_text_size(),
-        },
-    ]
+        }
+
+    if not agentloop:
+        return [{"tag": "hr"}, _md(
+            "\n".join(sep.join(e for e, _ in row) for row in rows),
+            "\n".join(sep.join(z for _, z in row) for row in rows),
+        )]
+
+    first = rows[0]
+    button = {
+        "tag": "button",
+        "text": {"tag": "plain_text", "content": str(agentloop.get("label") or "agent loop")},
+        # 用户 2026-10-30 定稿：无边框（H 版）——type=text 是飞书的无框按钮形态
+        "type": "text",
+        "size": "small",
+        "behaviors": [{
+            "type": "callback",
+            "value": {
+                "hermes_agentloop_action": "toggle",
+                "panel_key": str(agentloop.get("key") or ""),
+            },
+        }],
+    }
+    elements: list[dict] = [{"tag": "hr"}, {
+        "tag": "column_set",
+        "flex_mode": "none",
+        "horizontal_spacing": "6px",
+        "columns": [
+            {"tag": "column", "width": "auto", "vertical_align": "center",
+             "elements": [_md(*first[0])]},
+            {"tag": "column", "width": "auto", "vertical_align": "center",
+             "elements": [button]},
+            {"tag": "column", "width": "weighted", "weight": 1, "vertical_align": "center",
+             "elements": ([_md(sep.join(e for e, _ in first[1:]),
+                               sep.join(z for _, z in first[1:]))] if len(first) > 1 else [])},
+        ],
+    }]
+    if len(rows) > 1:
+        elements.append(_md(
+            "\n".join(sep.join(e for e, _ in row) for row in rows[1:]),
+            "\n".join(sep.join(z for _, z in row) for row in rows[1:]),
+        ))
+    return elements
+
 
 def _render_footer_field(
     name: str,

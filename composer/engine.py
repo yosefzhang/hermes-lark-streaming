@@ -102,6 +102,11 @@ class CardTurnState:
     paused: bool = False              # clarify 等待中（回调后 resume 续写同一张卡）
     resume_base: str = ""             # 暂停时正文快照（reopen 后新段快照的拼接基线）
     turn_id: str = ""                 # hermes 回合标识（transport 每帧携带；防跨回合串卡）
+    # v2.1.3：终态页脚用量数据（context_used/context_max …）。来源见
+    # adapter.usage_from_runner —— 读 gateway 内存里该会话 agent 的
+    # context_compressor（provider 实测 last_prompt_tokens + 模型窗口），
+    # 与 /status 同源。空 dict = 取不到，渲染层逐字段静默跳过。
+    usage: dict[str, Any] = field(default_factory=dict)
 
 
 class FrameComposer:
@@ -119,11 +124,16 @@ class FrameComposer:
         build_final_card: Callable[..., dict[str, Any]],
         config: Any | None = None,
         clarify_suspend_sec: float | None = None,
+        get_usage: Callable[[str], dict[str, Any] | None] | None = None,
     ) -> None:
         self._get_client = get_client          # () -> FeishuClient | None
         self._build_card = build_card          # build_streaming_card_v2(**kwargs)
         self._build_final_card = build_final_card
         self._config = config
+        # v2.1.3：终态页脚用量取数回调（chat_id -> footer_data 增量，None/{} 可）。
+        # 生产由 adapter 绑定 usage_from_runner（读 gateway 内存 agent 的
+        # context_compressor）；None = 无用量能力，页脚行为与旧版一致。
+        self._get_usage = get_usage
         # v2.0.26：clarify 暂停窗口（秒）。显式参数 > Config.clarify_suspend_sec
         # > 0（关闭——测试/无 config 环境走 v2.0.25 现状语义，存量断言零影响）。
         # 生产 adapter 传插件 Config（默认 1.2s）→ 边界 finalize → send_clarify
@@ -824,13 +834,30 @@ class FrameComposer:
         if content:
             st.answer_text = content
         st.last_activity = time.monotonic()
+        # v2.1.3：定稿前取一次用量（页脚 context 字段）。失败/缺失 → 空 dict，
+        # 页脚逐字段跳过，不影响定稿主链。
+        if self._get_usage is not None and not st.usage:
+            try:
+                st.usage = dict(self._get_usage(st.chat_id) or {})
+            except Exception:  # noqa: BLE001 — 用量是装饰性字段
+                _logger.debug(
+                    "composer: usage lookup failed chat=%s", st.chat_id, exc_info=True)
+            if st.usage:
+                _logger.info(
+                    "composer: footer usage chat=%s used=%s max=%s",
+                    st.chat_id, st.usage.get("context_used"), st.usage.get("context_max"),
+                )
+        agentloop = self._agentloop_button(st)
         await finalize_card(
             client, st, answer_element_id=_answer_element_id(),
             footer_fields=self._footer_fields(),
             footer_show_label=self._footer_show_label(),
+            footer_style=self._footer_style(),
+            agentloop=agentloop,
             panel_title=_panel_title(st.status_lines, elapsed_ms=_turn_elapsed_ms(st)),
             panel_expanded=self._panel_expanded(),
         )
+        self._register_agentloop(agentloop, st)
         _logger.info(
             "composer: card finalized chat=%s card=%s answer_len=%d status_lines=%d",
             st.chat_id, st.card_id, len(st.answer_text or ""), len(st.status_lines),
@@ -1016,13 +1043,17 @@ class FrameComposer:
                 try:
                     from .finalize import finalize_card
 
+                    agentloop = self._agentloop_button(st)
                     await finalize_card(
                         client, st, answer_element_id=_answer_element_id(),
                         footer_fields=self._footer_fields(),
                         footer_show_label=self._footer_show_label(),
+                        footer_style=self._footer_style(),
+                        agentloop=agentloop,
                         panel_title=_panel_title(st.status_lines, elapsed_ms=_turn_elapsed_ms(st)),
                         panel_expanded=self._panel_expanded(),
                     )
+                    self._register_agentloop(agentloop, st)
                 except Exception:
                     _logger.debug(
                         "composer: watchdog seal (api) skipped card=%s",
@@ -1049,6 +1080,12 @@ class FrameComposer:
         self._states.clear()
         self._by_message.clear()
         self._chat_locks.clear()
+        try:  # v2.1.5：面板快照注册表随 clear 一起清（重载/测试隔离）
+            from . import agentloop as _agentloop
+
+            _agentloop._REGISTRY.clear()  # noqa: SLF001 — 模块级状态，显式清理
+        except Exception:  # noqa: BLE001
+            pass
 
     # ── 页脚配置桥（插件 Config 惰性属性；异常回退 finalize 默认） ──────
     def _footer_fields(self) -> list[list[str]] | None:
@@ -1062,6 +1099,45 @@ class FrameComposer:
             return bool(self._config.footer_show_label)  # type: ignore[union-attr]
         except Exception:  # noqa: BLE001
             return False
+
+    def _footer_style(self) -> str:
+        """页脚风格（v2.1.4）：plain | icon；配置缺失回落 plain。"""
+        try:
+            style = str(self._config.footer_style or "plain")  # type: ignore[union-attr]
+        except Exception:  # noqa: BLE001
+            return "plain"
+        return style if style in ("plain", "icon") else "plain"
+
+    def _agentloop_button_on(self) -> bool:
+        """页脚 agent loop 按钮开关（v2.1.5）：配置缺失 = 关（保持旧布局）。"""
+        try:
+            return bool(self._config.footer_agentloop_button)  # type: ignore[union-attr]
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _agentloop_button(self, st: CardTurnState) -> dict[str, Any] | None:
+        """定稿页脚里那个收窄按钮的描述（无可展开内容时返回 None）。"""
+        if not self._agentloop_button_on() or not st.status_lines:
+            return None
+        from . import agentloop as _agentloop
+
+        return {"key": _agentloop.new_key(), "label": f"agent loop · {len(st.status_lines)}"}
+
+    def _register_agentloop(self, button: dict[str, Any] | None, st: CardTurnState) -> None:
+        """把本回合状态行快照登记给点击回调（seq 取定稿后的最终值）。"""
+        if not button:
+            return
+        from . import agentloop as _agentloop
+
+        _agentloop.register(button["key"], {
+            "card_id": st.card_id,
+            "chat_id": st.chat_id,
+            "status_lines": list(st.status_lines),
+            "line_times": list(st.line_times),
+            "durations": dict(st.tool_durations),
+            "title": _panel_title(st.status_lines, elapsed_ms=_turn_elapsed_ms(st)),
+            "seq": st.seq,
+        })
 
     def _panel_expanded(self) -> bool:
         """面板展开态（v2.0.16 面板收口重建用；与流式骨架同源同默认）。"""

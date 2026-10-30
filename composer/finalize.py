@@ -76,6 +76,8 @@ async def _seal_footer(
     footer_fields: list[list[str]] | None,
     show_label: bool,
     model_name: str,
+    style: str = "plain",
+    agentloop: dict[str, Any] | None = None,
 ) -> None:
     """插入 V1 风格页脚 + 删除 loading spinner（两步独立 batch_update）。"""
     from ..cardkit.elements import _LOADING_ELEMENT_ID, _build_footer_elements
@@ -86,6 +88,12 @@ async def _seal_footer(
         "model": model_name or "",
         "provider": _resolve_provider_name(),
     }
+    # v2.1.3：用量字段（context/tokens/cost 等由 engine 定稿前取好）。
+    # 渲染层对拿不到值的字段逐项静默跳过，这里只做"非空才覆盖"。
+    footer_data.update({
+        key: value for key, value in (getattr(state, "usage", None) or {}).items()
+        if value not in (None, 0, "", False)
+    })
     # v2.0.19：footer reasoning 等级（display.show_reasoning: true 且
     # reasoning_effort 有效时供值；渲染层无值自动跳过该字段）。
     from ..config import Config
@@ -97,6 +105,8 @@ async def _seal_footer(
         footer_data,
         fields=footer_fields or _DEFAULT_FOOTER_FIELDS,
         show_label=show_label,
+        style=style,
+        agentloop=agentloop,
     )
     if not elements:
         return
@@ -218,6 +228,8 @@ async def finalize_card(
     answer_element_id: str,
     footer_fields: list[list[str]] | None = None,
     footer_show_label: bool = False,
+    footer_style: str = "plain",
+    agentloop: dict[str, Any] | None = None,
     panel_title: str = "",
     panel_expanded: bool = True,
 ) -> None:
@@ -242,6 +254,8 @@ async def finalize_card(
             footer_fields=footer_fields,
             show_label=footer_show_label,
             model_name=_resolve_model_name(),
+            style=footer_style,
+            agentloop=agentloop,
         )
     except Exception:
         _logger.warning(
@@ -259,7 +273,30 @@ async def finalize_card(
     # 正常路径不再对从未有过面板的卡发 delete_elements（省 API + 免日志噪声）。
     # v2.0.16：有面板行时先做收口重渲染（流式「进行中橙」→ 定稿「已完成绿」），
     # 与空面板删除互斥；两者均为装饰性步骤：失败仅 debug/warning，不上抛阻断定稿。
-    if not (getattr(state, "status_lines", None) or []) and getattr(
+    # v2.1.5（用户指定的布局）：页脚带 agent loop 按钮时，终态把正上方的过程
+    # 面板整块删掉——过程记录改由按钮按需 append 展开，避免同一份内容出现两次。
+    # 流式期面板仍保留（进度可见），只在定稿瞬间收起成按钮。
+    if agentloop and getattr(state, "panel_on_card", False):
+        try:
+            from ..cardkit.elements import UNIFIED_PANEL_ELEMENT_ID
+
+            state.seq += 1
+            await call_with_seq_recovery(
+                state,
+                lambda seq: client.cardkit_batch_update(
+                    state.card_id,
+                    [{"action": "delete_elements", "params": {"element_ids": [UNIFIED_PANEL_ELEMENT_ID]}}],
+                    sequence=seq,
+                ),
+                what="finalize:panel-to-button",
+            )
+            state.panel_on_card = False
+        except Exception:
+            _logger.warning(
+                "composer: panel removal for agentloop button skipped card=%s",
+                str(state.card_id)[:12], exc_info=True,
+            )
+    elif not (getattr(state, "status_lines", None) or []) and getattr(
         state, "panel_on_card", False
     ):
         try:

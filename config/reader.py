@@ -233,6 +233,33 @@ class Config:
         return _to_bool(footer.get("show_label", False))
 
     @property
+    def footer_style(self) -> str:
+        """页脚视觉风格（v2.1.4）：``plain``（默认，``·`` 分隔）| ``icon``（emoji 图标 + 全角空格）。
+
+        未知/畸形值静默回落 ``plain``——页脚样式是装饰项，不该因为一处
+        配置拼写把整张卡的页脚打没了。
+        """
+        sec = self._plugin_sec()
+        footer = sec.get("footer", {})
+        if not isinstance(footer, dict):
+            return "plain"
+        style = str(footer.get("style", "plain") or "plain").strip().lower()
+        return style if style in ("plain", "icon") else "plain"
+
+    @property
+    def footer_agentloop_button(self) -> bool:
+        """页脚「agent loop」按钮开关（v2.1.5，默认关）。
+
+        True 时过程面板不再压在正文上方整块占位，而是折叠成页脚行尾的一个
+        小按钮；点击后由卡片回调把面板 append 到卡片末尾。
+        """
+        sec = self._plugin_sec()
+        footer = sec.get("footer", {})
+        if not isinstance(footer, dict):
+            return False
+        return _to_bool(footer.get("agentloop_button", False))
+
+    @property
     def native_streaming(self) -> bool:
         """v2.0.13：hermes native streaming 通道开关（默认 True）.
 
