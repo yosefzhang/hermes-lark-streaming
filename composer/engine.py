@@ -1121,7 +1121,7 @@ class FrameComposer:
             return None
         from . import agentloop as _agentloop
 
-        return {"key": _agentloop.new_key(), "label": f"🤖 agent loop · {len(st.status_lines)}"}
+        return {"key": _agentloop.new_key(), "label": f"🤖 loop · {len(st.status_lines)}"}
 
     def _register_agentloop(self, button: dict[str, Any] | None, st: CardTurnState) -> None:
         """把本回合状态行快照登记给点击回调（seq 取定稿后的最终值）。"""

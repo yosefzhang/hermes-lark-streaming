@@ -83,7 +83,7 @@ _LOADING_ELEMENT_ID = "loading_icon"
 # v2.1.4：页脚图标（style: icon）。飞书卡片不支持内联 SVG，emoji 是唯一
 # 零成本图标通道；键与 footer.fields 的字段名一一对应，未知字段不加图标。
 _FOOTER_ICONS: dict[str, str] = {
-    "status": "✅",
+    "status": "🚩",
     "elapsed": "⏳",      # 用户定稿：时间用漏斗（⏳，Unicode 6.0，跨端稳定）
     "model": "🧠",        # 大模型
     "provider": "🏬",     # 供应商（店铺）
@@ -398,7 +398,7 @@ def _build_footer_elements(
         fields = [["status", "elapsed", "context", "model"]]
 
     icon_style = str(style or "plain").strip().lower() == "icon"
-    sep = "　" if icon_style else " · "
+    sep = "　　" if icon_style else " · "   # v2.1.7：字段间隔用两个全角空格，视觉更松
     data = footer_data or {}
 
     def _render(field: str) -> tuple[str, str] | None:
@@ -407,7 +407,7 @@ def _build_footer_elements(
             return None
         if icon_style:
             if field == "status":
-                icon = "❌" if is_error else "⏹" if is_aborted else "✅"
+                icon = "❌" if is_error else "⏹" if is_aborted else "🚩"
             else:
                 icon = _FOOTER_ICONS.get(field, "")
             en = f"{icon} {en}".strip()
