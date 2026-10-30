@@ -102,7 +102,7 @@ hermes gateway restart
 
 | # | 位置 | V1 | V2 |
 |---|---|---|---|
-| ① | `plugins.enabled` | `- hermes-lark-streaming` | `- feishu-streaming-platform` |
+| ① | `plugins.enabled` | `- hermes-lark-streaming` | `- hermes-lark-streaming` |
 | ② | `platforms` | 只开原生 `feishu` | `feishu: enabled: false` + `feishu-streaming: enabled: true`（凭证平移；二选一防双回复） |
 | ③ | 配置节 | `hermes_lark_streaming:` | 改名 `feishu_streaming:`（不改也自动兼容） |
 

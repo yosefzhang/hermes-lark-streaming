@@ -34,7 +34,7 @@ def level1() -> None:
 
     manifest = yaml.safe_load((REPO_ROOT / "plugin.yaml").read_text(encoding="utf-8"))
     check("plugin.yaml kind=platform", manifest.get("kind") == "platform")
-    check("plugin.yaml name", manifest.get("name") == "feishu-streaming-platform")
+    check("plugin.yaml name", manifest.get("name") == "hermes-lark-streaming")
     check("plugin.yaml version=2.0.0", manifest.get("version") == "2.0.0")
     # 平台名推导（hermes loader 规则：strip trailing '-platform'）
     name = manifest["name"]

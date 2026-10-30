@@ -21,7 +21,7 @@ import yaml
 
 _logger = logging.getLogger("hermes_lark_streaming")
 
-_PLUGIN_NAME = "feishu-streaming-platform"
+_PLUGIN_NAME = "hermes-lark-streaming"  # 必须等于 plugin.yaml 的 name 与目录名
 # V2 配置节名；兼容读取 V1 残留的 hermes_lark_streaming 节
 _CONFIG_KEY = "feishu_streaming"
 _LEGACY_CONFIG_KEY = "hermes_lark_streaming"

@@ -55,7 +55,7 @@ platforms:
     app_secret: xxxxxxxx
 plugins:
   enabled:
-    - feishu-streaming-platform   # 插件注册名（plugin.yaml 的 name）
+    - hermes-lark-streaming   # = plugin.yaml 的 name = 目录名（两者必须一致）
 ```
 
 可选配置（全部有缺省值，不配也能跑）——完整键位表见 `../README.md` 配置节 / `API.md`：
@@ -96,7 +96,7 @@ setsid nohup <VENV_PYTHON> -m gateway.run \
 ```bash
 LOG=$(ls -t ~/.hermes/logs/gateway*.log | head -1)
 # ① 插件加载路径必须是 ~/.hermes/plugins/hermes-lark-streaming（主目录）
-grep "Loading plugin 'feishu-streaming-platform'" ~/.hermes/logs/agent.log | tail -1
+grep "Loading plugin 'hermes-lark-streaming'" ~/.hermes/logs/agent.log | tail -1
 # ② 加载失败必须为 0
 grep -c "Failed to load" "$LOG"
 # ③ 飞书 WebSocket 长连接已建立
@@ -177,7 +177,7 @@ hermes gateway restart
 ### 6.3 config.yaml 三处改动
 
 1. **插件注册名**——`plugins.enabled`：
-   cleanup 已清掉 V1 条目 `hermes-lark-streaming`，新增 `- feishu-streaming-platform`；若仍在则删旧条目
+   cleanup 已清掉 V1 条目 `hermes-lark-streaming`，新增 `- hermes-lark-streaming`；若仍在则删旧条目
 2. **平台切换**（V1 借道原生 `feishu` 平台+钩子；V2 是独立平台）——**必须显式切换，二选一防双回复**：
    ```yaml
    platforms:
@@ -215,7 +215,7 @@ hermes gateway restart
 
 | 症状 | 根因 | 处置 |
 |---|---|---|
-| 启动日志 `Skipping 'feishu-streaming-platform' (not in plugins.enabled)` | 6.3-① 未改 | 改 plugins.enabled 条目 |
+| 启动日志 `Skipping 'hermes-lark-streaming' (not in plugins.enabled)` | 6.3-① 未改 | 改 plugins.enabled 条目 |
 | 双平台同时回复 / 卡片+原生文本双发 | 6.3-② 原生 feishu 未关 | 二选一，关 feishu 开 feishu-streaming |
 | 启动 fail-fast 报继承面失配 | hermes < v0.22 | 先升级 hermes 本体 |
 | `ModuleNotFoundError` 而 pip list 可见 | 依赖装错环境（PM site-packages 漂移） | 见 README 依赖节判别方法 |

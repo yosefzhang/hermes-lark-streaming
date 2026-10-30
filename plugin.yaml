@@ -1,4 +1,7 @@
-name: feishu-streaming-platform
+name: hermes-lark-streaming
+# name 必须与插件目录名一致：运行时加载器按 manifest name 做 key，
+# 而 PM 依赖解析按目录名（pm/workspace.py::enabled_plugin_entries）——
+# 两者同名才能在 plugins.enabled 里只写一条。
 label: Feishu / Lark (Streaming Cards)
 kind: platform
 version: "2.1.5"
