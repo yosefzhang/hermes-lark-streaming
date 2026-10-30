@@ -414,6 +414,31 @@ class TestNoticeRouting:
         st = comp._states[chat]
         assert st.status_lines == ["💾 Self-improvement review: User profile updated"]
 
+    @pytest.mark.parametrize("text", [
+        "⚠️ Hermes 正在重启——你当前的任务将被中断…",
+        "⚠️ Hermes is restarting — your current task will be interrupted.",
+        "⚠️ Scheduled job 'nightly' was cut short because Hermes is restarting.",
+        "⚠️ 定时任务 'nightly' 被中断，因为 Hermes 正在重启。",
+    ])
+    def test_restart_notices_are_notice_text(self, text):
+        assert _is_notice_text(text)
+
+    @pytest.mark.parametrize("text", [
+        "⚠️ Hermes 正在重启——你当前的任务将被中断…",
+        "⚠️ Hermes is restarting — your current task will be interrupted.",
+        "⚠️ Scheduled job 'nightly' was cut short because Hermes is restarting.",
+        "⚠️ 定时任务 'nightly' 被中断，因为 Hermes 正在重启。",
+    ])
+    def test_restart_notices_classify_interim(self, text):
+        cls = classify_send(text, {"_interim_send": True})
+        assert cls.channel == CH_INTERIM
+        assert cls.kind == "advisory"
+
+    def test_restart_notice_does_not_swallow_tool_warning(self):
+        text = "⚠️ Warning: disk usage 95%"
+        assert not _is_notice_text(text)
+        assert classify_send(text, {"_interim_send": True}).channel == "progress"
+
     def test_upgrade_plain_skips_notice_and_notify(self, composer):
         from hermes_lark_streaming.plugin.adapter import _upgrade_plain_to_progress
 

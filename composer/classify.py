@@ -56,6 +56,10 @@ _NOTICE_RES: tuple[re.Pattern[str], ...] = (
     re.compile(r"^\s*⏳\s+Working\s+—\s+\d+\s+min(?:\s|$)", re.IGNORECASE),
     re.compile(r"^\s*(?:✅|❌)\s+Hermes update\s+(?:finished|failed|timed out)", re.IGNORECASE),
     re.compile(r"^\s*♻️?\s+Gateway\s+(?:restarted successfully|online\b)", re.IGNORECASE),
+    # 重启/关停中断通知（中英双语）→ 原生文本，绝不建成空卡。
+    re.compile(r"^\s*⚠\uFE0F?\s+Hermes\s+(?:is\s+)?(?:restarting|shutting\s+down)\b", re.IGNORECASE),
+    re.compile(r"^\s*⚠\uFE0F?\s+Hermes\s+正在(?:重启|关闭)"),
+    re.compile(r"^\s*⚠\uFE0F?\s+(?:Scheduled\s+job|定时任务)\b.*?(?:cut\s+short|被中断)", re.IGNORECASE),
 )
 
 
