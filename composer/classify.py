@@ -52,7 +52,10 @@ CH_PLAIN = "plain"        # 普通消息（cron / 后台 / 无标记发送）→
 # （plugins/platforms/discord/adapter.py _DISCORD_NONCONVERSATIONAL_*）。
 # V2 语义对齐 V1 defer_background_review：活跃卡 → 并入面板；无卡 → 原生文本。
 _NOTICE_RES: tuple[re.Pattern[str], ...] = (
-    re.compile(r"^\s*💾\s*Self-improvement review:\s+\S", re.IGNORECASE),
+    re.compile(r"^\s*💾\s*Self-improvement review[:：]\s*\S", re.IGNORECASE),
+    # 中文文案（locales/zh.yaml:3440 "💾 自我改进回顾：{summary}"）——只白名单英文时,
+    # 中文通知会被当成正文建出一张多余卡片（2026-11-02 用户实测每轮多一张）。
+    re.compile(r"^\s*💾\s*自我改进回顾[:：]"),
     re.compile(r"^\s*⏳\s+Working\s+—\s+\d+\s+min(?:\s|$)", re.IGNORECASE),
     re.compile(r"^\s*(?:✅|❌)\s+Hermes update\s+(?:finished|failed|timed out)", re.IGNORECASE),
     re.compile(r"^\s*♻️?\s+Gateway\s+(?:restarted successfully|online\b)", re.IGNORECASE),
