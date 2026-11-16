@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from typing import Any
 
 from .elements import (
@@ -37,6 +39,13 @@ __all__ = [
 _FEISHU_ELEMENT_LIMIT = 200
 
 _ELEMENT_LIMIT_MARGIN = 5
+
+# v2.1.x（2026-11-09，用户需求）：卡片是否渲染模型思考行。
+# 默认关闭 —— 思考是 agent 的内部过程，出现在客户/日常消息卡里只会占屏。
+# 设环境变量 HLS_SHOW_THINKING=1 可临时恢复排查。
+_SHOW_THINKING_LINES = os.environ.get("HLS_SHOW_THINKING", "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 
 # ── v2.0.5 状态面板 V1(1.8.1) 同款渲染 ────────────────────────────────────────
 # gateway progress 模板行 → V1 unified panel 子元素：
@@ -153,6 +162,12 @@ def _render_status_children(
     children: list[dict[str, Any]] = []
     round_no = 0
     prev_thinking = False
+    # v2.1.x（用户需求 2026-11-09）：默认不把模型思考（reasoning 流）渲染进卡片。
+    # 思考对 agent 有用，对读卡片的人无意义，长思考还会把卡片撑满。
+    # 排查时可设 HLS_SHOW_THINKING=1 临时恢复。
+    if not _SHOW_THINKING_LINES:
+        lines = [ln for ln in lines
+                 if parse_progress_line(strip_dedup_suffix(ln or ""))[0] != "thinking"]
     streaming = turn_state == "streaming"
     last_group_start, open_at_end = _last_thinking_group(lines)
     elapsed_by_line = _round_elapsed_ms(lines, list(line_times or []))

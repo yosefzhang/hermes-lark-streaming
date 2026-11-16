@@ -1,5 +1,11 @@
 # 更新日志
 
+## v2.1.9（2026-11-09）
+
+| 类型 | 变更 |
+|------|------|
+| 变更 | 卡片默认**不再渲染模型思考行**（reasoning 流）：`_render_status_children`（`cardkit/cards.py`）在分组前把 `kind == "thinking"` 的进度行整体丢弃，思考仍存在于会话记录，只是不进卡片。原因：思考段会插在「引用 → 正文」之间，长思考可达数十行并占满卡片；旧开关 `hermes_lark_streaming.max_reasoning_rounds` / `display.show_reasoning` 在 V2 引擎中并无消费方，改它们无效。排查时设 `HLS_SHOW_THINKING=1` 可临时恢复。 |
+
 ## v2.1.2（2026-10-29）
 
 | 类型 | 变更 |
