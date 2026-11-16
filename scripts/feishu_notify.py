@@ -13,6 +13,16 @@
   FEISHU_WEBHOOK      飞书群自定义机器人 webhook（缺失时告警退出 0——通知组件不炸 CI）
   FEISHU_SIGN_SECRET  可选；机器人开启签名校验时必填
 
+v2.0.32-CI2 修复（run #1547 日志实证，2026-11-09）：
+  - 卡片结构：V1 式 `{"tag":"action","actions":[...]}` 容器被 schema 2.0 拒收
+    （飞书 200861 "cards of schema V2 no longer support this capability;
+    unsupported tag action"）→ 四类通知卡自 v2.0.27 起从未送达且步骤仍绿。
+    改为 lark_md 链接行（div+lark_md 为 2.0 卡基础组件，飞书对同 payload 的
+    elements[0] div 解析通过，插件生产卡片长期使用同一结构）。
+  - 失败可见性：飞书业务拒绝（code≠0，确定性缺陷如卡片结构/签名错误）与
+    两次网络失败均 exit 1 让步骤显红——“不炸 CI”只适用于 webhook 未配置，
+    不适用于发了但没送到（本次事故教训）。
+
 gitee-digest 专用：
   GITEE_OWNER / GITEE_REPO / GITEE_TOKEN   Gitee API 访问（仓库私有也需要）
   --state-file PATH                        增量水位文件（工作流经 actions/cache 持久化）
@@ -48,16 +58,25 @@ def _sign() -> dict:
     return {"timestamp": ts, "sign": base64.b64encode(digest).decode("utf-8")}
 
 
-def send_card(title: str, header_template: str, md_text: str, button: dict | None = None) -> None:
-    """发送 Card 2.0 消息卡。缺失 webhook 或发送失败仅告警，绝不抛出（通知不炸 CI）。"""
+def send_card(title: str, header_template: str, sections: list[str], link: tuple[str, str] | None = None) -> None:
+    """发送 Card 2.0 消息卡。webhook 未配置 → 告警退出 0；送达失败 → exit 1（见文件头修复说明）。
+
+    布局约定（v2.0.32-CI2）：sections 每项独立成 div 元素——飞书段与段之间自带间距，
+    替代单 blob 长文（用户反馈：全部段落挤一个 lark_md 里层次不清）。
+    """
     webhook = os.environ.get("FEISHU_WEBHOOK", "").strip()
     if not webhook:
         print("[feishu_notify] FEISHU_WEBHOOK 未配置，跳过飞书通知")
         return
-    elements: list[dict] = [{"tag": "div", "text": {"tag": "lark_md", "content": md_text}}]
-    if button:
+    elements: list[dict] = [
+        {"tag": "div", "text": {"tag": "lark_md", "content": s}} for s in sections if s
+    ]
+    if link:
+        text, url = link
         elements.append({"tag": "hr"})
-        elements.append({"tag": "action", "actions": [button]})
+        # schema 2.0 不支持 V1 的 tag:action 按钮容器（飞书 200861 拒收，run #1547 实证），
+        # 链接统一走 lark_md [text](url) 行
+        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": f"[{text}]({url})"}})
     payload = {
         **_sign(),
         "msg_type": "interactive",
@@ -72,22 +91,30 @@ def send_card(title: str, header_template: str, md_text: str, button: dict | Non
         webhook, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         headers={"Content-Type": "application/json"},
     )
-    try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-        if body.get("code", 0) != 0:
-            print(f"[feishu_notify] 飞书返回异常: {body}", file=sys.stderr)
-        else:
-            print("[feishu_notify] 飞书通知已发送")
-    except Exception as exc:  # noqa: BLE001 — 通知失败不影响工作流
-        print(f"[feishu_notify] 飞书通知发送失败: {exc}", file=sys.stderr)
+    body: dict | None = None
+    for attempt in (1, 2):
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            break
+        except Exception as exc:  # noqa: BLE001 — 网络异常重试一次后显红
+            print(f"[feishu_notify] 发送异常（第 {attempt}/2 次）: {exc}", file=sys.stderr)
+            if attempt == 1:
+                time.sleep(2)
+    if body is None:
+        print("[feishu_notify] 飞书通知两次发送失败，exit 1 显红", file=sys.stderr)
+        sys.exit(1)
+    if body.get("code", 0) != 0:
+        # 业务拒绝 = 确定性缺陷（卡片结构/签名错误），必须显红——吞掉就是本次事故：
+        # 卡从未送达而 CI 永远绿
+        print(f"[feishu_notify] 飞书拒绝(code={body.get('code')}): {body.get('msg', '')}", file=sys.stderr)
+        sys.exit(1)
+    print("[feishu_notify] 飞书通知已发送")
 
 
-def _btn(text: str, url: str) -> dict:
-    return {
-        "tag": "button", "text": {"tag": "plain_text", "content": text},
-        "url": url, "type": "primary",
-    }
+def _link(text: str, url: str) -> tuple[str, str]:
+    """V2 卡不收 action 按钮容器，链接统一 lark_md 行（send_card link 参数）。"""
+    return (text, url)
 
 
 # ---------------------------------------------------------------------------
@@ -114,8 +141,11 @@ def cmd_github_event() -> None:
         url = issue.get("html_url") or f"{base}/issues/{num}"
         template = {"opened": "green", "reopened": "orange", "closed": "grey"}.get(action, "grey")
         title_line = f"🆕 GitHub Issue #{num}" if action == "opened" else f"GitHub Issue #{num}"
-        body = f"**{title}**\n仓库 `{repo}` · 作者 {user} · 动作 **{action}**"
-        send_card(title_line, template, body, _btn("🔗 查看 Issue", url))
+        send_card(
+            title_line, template,
+            [f"**{title}**", f"仓库 `{repo}` · 作者 {user} · 动作 **{action}**"],
+            _link("🔗 查看 Issue", url),
+        )
     elif name == "pull_request":
         pr = event.get("pull_request", {})
         num, title = pr.get("number"), pr.get("title", "")
@@ -128,8 +158,11 @@ def cmd_github_event() -> None:
             action_label = action
             template = {"opened": "green", "reopened": "orange", "closed": "grey"}.get(action, "grey")
         title_line = f"🆕 GitHub PR #{num}" if action == "opened" else f"GitHub PR #{num}"
-        body = f"**{title}**\n仓库 `{repo}` · 作者 {user} · 动作 **{action_label}**"
-        send_card(title_line, template, body, _btn("🔗 查看 PR", url))
+        send_card(
+            title_line, template,
+            [f"**{title}**", f"仓库 `{repo}` · 作者 {user} · 动作 **{action_label}**"],
+            _link("🔗 查看 PR", url),
+        )
     else:
         print(f"[feishu_notify] 未支持的事件类型 {name}，跳过")
 
@@ -202,9 +235,11 @@ def cmd_gitee_digest() -> None:
 
     def _line(label: str, entry: dict) -> str:
         st = entry.get("state", "")
+        url = entry.get("html_url", "")
+        tail = f" · [打开原帖]({url})" if url else ""
         return (
             f"- **{label} #{entry.get('number')}** {entry.get('title', '')}"
-            f"\n  `{entry.get('user', {}).get('login', '')}` · {st} · <{entry.get('html_url', '')}>"
+            f"\n  `{entry.get('user', {}).get('login', '')}` · {st}{tail}"
         )
 
     prs = [x for x in items if x[0] == "PR"]
@@ -218,7 +253,7 @@ def cmd_gitee_digest() -> None:
         parts.append(f"**Issue（{len(issues)}）**\n" + "\n".join(_line("Issue", e) for _, e in issues[:10]))
         if len(issues) > 10:
             parts.append(f"…另有 {len(issues) - 10} 个 Issue")
-    send_card(f"🪩 Gitee 动态（{len(items)} 条更新）", "yellow", "\n\n".join(parts), _btn("🔗 打开 Gitee", f"https://gitee.com/{owner}/{repo}"))
+    send_card(f"🪩 Gitee 动态（{len(items)} 条更新）", "yellow", parts, _link("🔗 打开 Gitee", f"https://gitee.com/{owner}/{repo}"))
     _write_state(state_file)
 
 
@@ -273,32 +308,42 @@ def cmd_ci_report() -> None:
     run_id = os.environ.get("RUN_ID", "")
     server = os.environ.get("SERVER_URL", "https://github.com")
     trigger = os.environ.get("TRIGGER", "")
+    force_reverify = os.environ.get("FORCE_REVERIFY", "").strip().lower() == "true"
     unit_t, unit_f, unit_l = _summarize_junit("unit_test_report.xml")
     e2e_t, e2e_f, e2e_l = _summarize_junit("e2e_report.xml")
     total, failed = unit_t + e2e_t, unit_f + e2e_f
 
     ok = exit_code == "0"
     template = "green" if ok else "red"
-    status = "✅ 通过" if ok else "❌ 失败"
     summary = f"{total} 用例 · {failed} 失败" if total else "未运行"
+    if force_reverify:
+        # 重验收口卡（无新代码的 force_tests dispatch）：标题与状态行明示
+        # "重验"，跟真实同步的报告区分开（用户裁决 2026-11-11 方案1：
+        # 连续失败后群里需要一条已恢复绿卡，读卡人才知道伤已收口）。
+        title = "Gitee→GitHub 重验报告"
+        status = "✅ 重验通过（无新代码）" if ok else "❌ 重验失败"
+    else:
+        title = "Gitee→GitHub 同步报告"
+        status = "✅ 测试通过" if ok else "❌ 测试失败"
     trigger_label = "⏰ 定时同步" if trigger == "schedule" else "👆 手动触发"
 
-    body_lines = [
-        f"**插件版本**: v{_plugin_version()}　**测试**: {status}（{summary}）　**触发**: {trigger_label}",
+    sections = [
+        f"**{status}**（{summary}）",
+        f"插件版本 **v{_plugin_version()}** · 触发 {trigger_label}",
     ]
     changed: list[str] = []
     if Path("changed_files.txt").exists():
         changed = [x.strip() for x in Path("changed_files.txt").read_text(encoding="utf-8").splitlines() if x.strip()]
     if changed:
-        shown = "\n".join(f"- `{f}`" for f in changed[:10])
-        if len(changed) > 10:
+        shown = "\n".join(f"- `{f}`" for f in changed[:8])
+        if len(changed) > 8:
             shown += f"\n- …共 {len(changed)} 个文件"
-        body_lines.append(f"**变更文件**\n{shown}")
+        sections.append(f"**变更文件（{len(changed)}）**\n{shown}")
     failure_lines = unit_l + e2e_l
     if failure_lines:
-        body_lines.append("**失败用例**\n" + "\n".join(failure_lines[:15]))
-    button = _btn("🔗 查看 Actions", f"{server}/{repo}/actions/runs/{run_id}") if repo and run_id else None
-    send_card("Gitee→GitHub 同步报告", template, "\n\n".join(body_lines), button)
+        sections.append("**失败用例**\n" + "\n".join(failure_lines[:15]))
+    link = _link("🔗 查看 Actions", f"{server}/{repo}/actions/runs/{run_id}") if repo and run_id else None
+    send_card(title, template, sections, link)
 
 
 # ---------------------------------------------------------------------------
@@ -307,18 +352,55 @@ def cmd_ci_report() -> None:
 
 
 def cmd_hermes_release() -> None:
-    """hermes-agent 上游新版提醒（继承面兼容性需人工 E2E 验证）。"""
+    """hermes-agent 新版本兼容性报告（自动测试后的最终结论，2026-11-11 用户验收语义）.
+
+    用户裁决：推送必须给出「更新内容 + 插件是否兼容」的结果，而不是建议
+    人工去做哪些测试。工作流（hermes-release-watch.yml）在检测到新版本后
+    自动拉取新版源码与本插件最新代码跑 scripts/compat_probe.py（S1 源码
+    导入 / S2 插件绑定 / S3 继承面 fail-fast / S4 官方表面清单 / S5 回归
+    测试），本命令消费其结论与明细。
+
+    环境变量：
+      HERMES_LATEST / HERMES_LAST   新版 tag / 上次已记录版本
+      COMPAT_VERDICT                pass | fail（探测脚本结论）
+      COMPAT_SUMMARY                探测明细（多行，工作流从报告 JSON 渲染）
+      HERMES_NOTES                  release notes 摘要（工作流截断）
+    """
     latest = os.environ.get("HERMES_LATEST", "unknown")
     last = os.environ.get("HERMES_LAST", "none")
-    body = (
-        f"**hermes-agent** 发布新版本：**{latest}**（上次已记录：{last}）\n\n"
-        "建议动作：\n"
-        "1. 在测试服务器 checkout 新版本并重启网关；\n"
-        "2. 跑 `scripts/e2e_v2.py --scenario full,reply` 真飞书验证；\n"
-        "3. 插件继承面 fail-fast 探测会在启动日志明确报出失配点（若有）；\n"
-        "4. 验证通过后再升级生产网关。"
+    verdict = os.environ.get("COMPAT_VERDICT", "").strip().lower()
+    summary = os.environ.get("COMPAT_SUMMARY", "").strip()
+    notes = os.environ.get("HERMES_NOTES", "").strip()
+
+    if verdict == "pass":
+        head = f"✅ **结论：插件兼容 hermes-agent {latest}**"
+        color = "green"
+    elif verdict == "fail":
+        head = f"❌ **结论：插件与 hermes-agent {latest} 存在失配**"
+        color = "red"
+    else:
+        # verdict 缺失 = 兼容性测试未能产出结论（工作流异常）：如实呈现，
+        # 不冒充结论、也不退回旧的"建议动作"文案。
+        head = "⚠️ **结论：兼容性验证未完成（CI 异常）**"
+        color = "orange"
+
+    sections = [
+        head,
+        f"**版本**：{latest}（上次已记录：{last}）",
+    ]
+    if notes:
+        sections.append(f"**更新内容**：\n{notes}")
+    if summary:
+        sections.append(f"**验证明细**：\n{summary}")
+    if verdict != "pass" and verdict:
+        sections.append(
+            "升级生产网关前请先处理失配项；插件继承面 fail-fast 探测也会在"
+            "启动日志拒绝带伤启动（内容永不丢红线不涉及）。"
+        )
+    send_card(
+        f"⬆️ hermes-agent {latest} 兼容性报告", color, sections,
+        _link("🔗 查看发布页", "https://github.com/NousResearch/hermes-agent/releases"),
     )
-    send_card(f"⬆️ hermes-agent 新版本 {latest}", "orange", body, _btn("🔗 查看发布页", "https://github.com/NousResearch/hermes-agent/releases"))
 
 
 # ---------------------------------------------------------------------------

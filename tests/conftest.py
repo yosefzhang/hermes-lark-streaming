@@ -17,7 +17,14 @@ package-registration block.
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
+
+# v2.1.9 fork feature: cards hide model "thinking" rows by default
+# (HLS_SHOW_THINKING gates it). Upstream test-suite asserts the rendering
+# pipeline, so turn the rows back on for tests only — the default-off
+# behaviour is exercised explicitly by tests/test_thinking_filter.py.
+os.environ.setdefault("HLS_SHOW_THINKING", "1")
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
